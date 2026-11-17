@@ -1,0 +1,178 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Trader Tools</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--tx:#1a2233;--mut:#6b7587;--ac:#2563eb;--bd:#dde3ee;--g:#16a34a;--r:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#0e121b;--card:#171d2a;--tx:#e8ecf4;--mut:#94a0b6;--ac:#5b8cff;--bd:#2a3246;--g:#34d399;--r:#f87171}}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:env(safe-area-inset-top,0) 0 calc(64px + env(safe-area-inset-bottom,0))}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px}h1{font-size:20px;margin:0}h2{margin:8px 0}h2 small{color:var(--mut);font-size:13px}
+#view{padding:0 12px;max-width:600px;margin:auto}.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+.in,select{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font-size:16px;font-family:inherit}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}.row{display:flex;gap:8px;align-items:center;margin:8px 0}.row>*{flex:1}
+.btn{width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;background:var(--ac);color:#fff;font-size:16px;font-family:inherit}.btn:disabled{opacity:.5}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0}.chip{white-space:nowrap;padding:8px 12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:20px;font-size:14px;font-family:inherit;flex:none}.chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.item{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;margin-bottom:8px}.item>div:first-child{flex:1}.item small{display:block;color:var(--mut);font-size:12px}.rt{text-align:end}
+.badge{min-width:34px;text-align:center;padding:4px 6px;border-radius:8px;background:var(--bd);font-size:13px;font-weight:700}.gb{background:var(--g);color:#fff}.rb{background:var(--r);color:#fff}
+.res div{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:15px}.res div:last-child{border:0}.res b{direction:ltr}
+.sig{font-size:22px;font-weight:700;text-align:center;padding:8px}.g{color:var(--g)}.r{color:var(--r)}.note{font-size:13px;color:var(--mut);line-height:1.7}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th,td{padding:6px 3px;border-bottom:1px solid var(--bd);text-align:center}td:first-child{text-align:start}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom,0)}
+nav button{flex:1;border:0;background:none;color:var(--mut);padding:8px 0;font-size:12px;font-family:inherit}nav button span{display:block;font-size:20px}nav button.on{color:var(--ac)}
+#lb{padding:6px 12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;font-size:15px}
+</style></head><body><header><h1 id="h"></h1><button id="lb"></button></header><div id="view"></div><nav id="nav"></nav>
+<script>
+const COST=0.0002;
+const ewm=(a,al)=>{let e=a[0];return a.map((v,i)=>i?(e=v*al+e*(1-al)):e)};
+const mean=x=>x.reduce((s,v)=>s+v,0)/x.length;
+const std=x=>{const m=mean(x);return Math.sqrt(x.reduce((s,v)=>s+(v-m)**2,0)/(x.length-1))};
+const roll=(a,n,f)=>a.map((_,i)=>i<n-1?NaN:f(a.slice(i-n+1,i+1)));
+function parseY(j){const r=j.chart.result[0],q=r.indicators.quote[0],D={t:[],h:[],l:[],c:[]};
+ (r.timestamp||[]).forEach((t,i)=>{if(q.close[i]!=null&&q.high[i]!=null&&q.low[i]!=null){D.t.push(t);D.h.push(q.high[i]);D.l.push(q.low[i]);D.c.push(q.close[i])}});
+ D.price=r.meta.regularMarketPrice;D.prev=r.meta.chartPreviousClose;return D}
+function ind(D){const {c,h,l}=D;
+ const up=ewm(c.map((v,i)=>i?Math.max(v-c[i-1],0):0),1/14),dn=ewm(c.map((v,i)=>i?Math.max(c[i-1]-v,0):0),1/14);
+ const rsi=up.map((u,i)=>dn[i]===0?100:100-100/(1+u/dn[i]));
+ const e12=ewm(c,2/13),e26=ewm(c,2/27),macd=e12.map((v,i)=>v-e26[i]),sig=ewm(macd,2/10);
+ const s20=roll(c,20,mean),s50=roll(c,50,mean),sd=roll(c,20,std);
+ const bu=s20.map((v,i)=>v+2*sd[i]),bl=s20.map((v,i)=>v-2*sd[i]);
+ const lo=roll(l,14,x=>Math.min(...x)),hi=roll(h,14,x=>Math.max(...x));
+ const k=c.map((v,i)=>100*(v-lo[i])/(hi[i]-lo[i])),d=roll(k,3,mean);
+ const tr=c.map((v,i)=>i?Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1])):h[i]-l[i]);
+ return {c,rsi,macd,sig,s20,s50,bu,bl,k,d,atr:ewm(tr,1/14)}}
+function votes(I,i){const v=[],r=I.rsi[i],c=I.c[i];
+ if(r<30)v.push([1,'rsiLow',r]);else if(r>70)v.push([-1,'rsiHigh',r]);
+ v.push(I.macd[i]>I.sig[i]?[1,'macdUp']:[-1,'macdDn']);
+ v.push(c>I.s50[i]?[1,'aboveSma']:[-1,'belowSma']);
+ if(I.k[i]<20&&I.k[i]>I.d[i])v.push([1,'stochUp']);else if(I.k[i]>80&&I.k[i]<I.d[i])v.push([-1,'stochDn']);
+ if(c<I.bl[i])v.push([1,'bbLow']);else if(c>I.bu[i])v.push([-1,'bbHigh']);
+ return v}
+function analyze(D,tf){const I=ind(D),n=D.c.length,i=tf==='1d'?n-1:n-2;
+ if(n<60)throw new Error('not enough data');
+ const v=votes(I,i),score=v.reduce((s,x)=>s+x[0],0),dir=score>=3?'BUY':score<=-3?'SELL':'',px=I.c[i],a=I.atr[i];
+ const sl=dir==='BUY'?px-1.5*a:px+1.5*a,tp=dir==='BUY'?px+3*a:px-3*a;
+ return {I,i,v,score,dir,px,atr:a,sl,tp}}
+const sp=(en,ex)=>{let s=0;return en.map((e,i)=>{if(ex[i])s=0;else if(e)s=1;return s})};
+const STR={
+ rsi:I=>{const a=sp(I.rsi.map(x=>x<30),I.rsi.map(x=>x>50)),b=sp(I.rsi.map(x=>x>70),I.rsi.map(x=>x<50));return a.map((x,i)=>x-b[i])},
+ macd:I=>I.macd.map((x,i)=>x>I.sig[i]?1:-1),
+ sma:I=>I.s20.map((x,i)=>x>I.s50[i]?1:-1),
+ bb:I=>{const a=sp(I.c.map((x,i)=>x<I.bl[i]),I.c.map((x,i)=>x>I.s20[i])),b=sp(I.c.map((x,i)=>x>I.bu[i]),I.c.map((x,i)=>x<I.s20[i]));return a.map((x,i)=>x-b[i])},
+ trend:I=>I.c.map((x,i)=>I.rsi[i]<40&&x>I.s50[i]?1:I.rsi[i]>60&&x<I.s50[i]?-1:0)};
+function metrics(c,pos,a=0){let eq=1,pk=1,dd=0,tr=[],cur=null;
+ for(let i=Math.max(a,1);i<c.length;i++){const p0=pos[i-1]||0,p1=pos[i]||0,r=p0*(c[i]/c[i-1]-1)-COST*Math.abs(p1-p0);
+  eq*=1+r;pk=Math.max(pk,eq);dd=Math.min(dd,eq/pk-1);
+  if(p0!==0)cur=(cur||0)+r;
+  if(p1!==p0&&cur!==null){tr.push(cur);cur=null}}
+ if(cur!==null)tr.push(cur);
+ return {ret:(eq-1)*100,n:tr.length,wr:tr.length?100*tr.filter(x=>x>0).length/tr.length:0,dd:dd*100}}
+function backtest(D){const I=ind(D),cut=Math.floor(D.c.length*0.7),out={};
+ for(const k in STR){const pos=STR[k](I),m=metrics(I.c,pos);m.oos=metrics(I.c,pos,cut).ret;out[k]=m}
+ out.bh=(D.c[D.c.length-1]/D.c[0]-1)*100;return out}
+const KW={pos:'surge rally gain rise beat strong bullish upbeat jump record growth ارتفع ارتفاع صعود يقفز مكاسب قفزة انتعاش تعافي'.split(' '),
+ neg:'fall drop plunge loss miss weak bearish slump crash fear recession cut هبط هبوط تراجع انخفاض خسائر انهيار ركود'.split(' ')};
+function kwSent(titles){if(!titles.length)return 0;
+ const s=titles.reduce((a,t)=>{t=t.toLowerCase();return a+(KW.pos.some(w=>t.includes(w))?1:0)-(KW.neg.some(w=>t.includes(w))?1:0)},0);
+ return Math.max(-1,Math.min(1,s/4))}
+if(typeof module!=='undefined')module.exports={parseY,ind,votes,analyze,backtest,kwSent,metrics,STR};
+const ASSETS=[];
+const FX='EURUSD GBPUSD AUDUSD NZDUSD USDCAD USDCHF USDJPY EURGBP EURJPY EURCHF EURAUD EURCAD EURNZD GBPJPY GBPCHF GBPAUD GBPCAD GBPNZD AUDJPY AUDCHF AUDCAD AUDNZD NZDJPY NZDCHF NZDCAD CADJPY CADCHF CHFJPY USDTRY USDZAR USDMXN USDSGD USDHKD USDNOK USDSEK USDPLN USDCNY USDINR USDSAR USDBRL'.split(' ');
+FX.forEach(p=>{const n=p.slice(0,3)+'/'+p.slice(3);ASSETS.push({s:p+'=X',n,a:n,c:'fx',q:p.slice(0,3)+' '+p.slice(3)+' forex'})});
+[['GC=F','Gold','ذهب'],['SI=F','Silver','فضة'],['PL=F','Platinum','بلاتين'],['PA=F','Palladium','بلاديوم'],['HG=F','Copper','نحاس'],['CL=F','WTI Crude Oil','نفط WTI'],['BZ=F','Brent Oil','نفط برنت'],['NG=F','Natural Gas','غاز طبيعي'],['HO=F','Heating Oil','زيت التدفئة'],['RB=F','Gasoline','بنزين'],['ZC=F','Corn','ذرة'],['ZW=F','Wheat','قمح'],['ZS=F','Soybeans','فول الصويا'],['KC=F','Coffee','قهوة'],['SB=F','Sugar','سكر'],['CC=F','Cocoa','كاكاو'],['CT=F','Cotton','قطن']]
+ .forEach(([s,n,a])=>ASSETS.push({s,n,a,c:'com',q:n.replace('WTI ','')+' price'}));
+['BTC','ETH','BNB','XRP','SOL','ADA','DOGE','LTC'].forEach(x=>ASSETS.push({s:x+'-USD',n:x,a:x,c:'cry',q:x+' crypto'}));
+[['^GSPC','S&P 500','إس آند بي 500'],['^DJI','Dow Jones','داو جونز'],['^IXIC','Nasdaq','ناسداك'],['^FTSE','FTSE 100','فوتسي 100'],['^GDAXI','DAX','داكس'],['^N225','Nikkei 225','نيكي 225']]
+ .forEach(([s,n,a])=>ASSETS.push({s,n,a,c:'idx',q:n+' stocks'}));
+const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let P={};try{P=JSON.parse(localStorage.getItem('tt')||'{}')}catch(e){}
+const S={lang:P.lang||((navigator.language||'').startsWith('ar')?'ar':'en'),tf:P.tf||'1h',favs:P.favs||[],cfg:P.cfg||{tg:'',chat:'',ak:'',auto:0},last:P.last||{},tab:'market',cat:'all',q:'',scan:{},cur:null};
+const save=()=>{try{localStorage.setItem('tt',JSON.stringify({lang:S.lang,tf:S.tf,favs:S.favs,cfg:S.cfg,last:S.last}))}catch(e){}};
+const T={en:{title:'Trader Tools',market:'Market',tools:'Tools',settings:'Settings',search:'Search…',all:'All',fav:'★ Favorites',fx:'Forex',com:'Commodities',cry:'Crypto',idx:'Indices',
+scanAll:'Scan list',scanning:'Scanning',price:'Price',buy:'BUY',sell:'SELL',neutral:'NEUTRAL',strength:'Strength',sl:'Stop',tp:'Target',news:'News',noNews:'No recent news',loading:'Loading…',err:'Failed to load',
+backtest:'Strategy tester',run:'Run test',ret:'Return',win:'Win',trd:'Trades',dd:'Max DD',oos:'Last 30%',bh:'Buy & hold',tgSend:'Send to Telegram',sent:'Sent ✓',failed:'Failed ✗',
+s_rsi:'RSI reversal',s_macd:'MACD cross',s_sma:'SMA 20/50 cross',s_bb:'Bollinger reversal',s_trend:'RSI + trend',back:'← Back',ind:'Indicators',
+rsiLow:'RSI oversold',rsiHigh:'RSI overbought',macdUp:'MACD above signal',macdDn:'MACD below signal',aboveSma:'Price above SMA50',belowSma:'Price below SMA50',stochUp:'Stochastic turning up',stochDn:'Stochastic turning down',bbLow:'Below lower Bollinger',bbHigh:'Above upper Bollinger',
+lang:'Language',tf:'Timeframe',tgT:'Telegram bot token',tgC:'Telegram chat ID',ak:'Anthropic API key (optional, AI news analysis)',auto:'Auto-scan favorites while app is open',off:'Off',min:'min',tgTest:'Test Telegram',saved:'Saved',
+pos:'Position size & lot',bal:'Balance ($)',rp:'Risk %',rr:'Reward : Risk',slp:'Stop (pips)',pv:'Pip value per lot ($)',calc:'Calculate',risk:'Risk amount',lots:'Lots',mini:'Mini lots (0.1)',micro:'Micro lots (0.01)',units:'Units',tpp:'Target (pips)',prof:'Expected profit',
+bin:'Binary options',stake:'Stake ($)',pay:'Payout %',wr:'Your win rate %',nt:'Trades',be:'Break-even win rate',ev:'Expected / trade',evn:'Expected over trades',ruin:'Losses to wipe out',
+disc:'Educational tool only, not financial advice. Past performance does not guarantee future results. Auto-scan works only while the app is open; for 24/7 alerts use the server bot. OTC prices are not available.'},
+ar:{title:'أدوات المتداول',market:'السوق',tools:'الأدوات',settings:'الإعدادات',search:'بحث…',all:'الكل',fav:'★ المفضلة',fx:'فوركس',com:'سلع',cry:'عملات رقمية',idx:'مؤشرات',
+scanAll:'فحص القائمة',scanning:'جارٍ الفحص',price:'السعر',buy:'شراء',sell:'بيع',neutral:'محايد',strength:'القوة',sl:'وقف',tp:'هدف',news:'الأخبار',noNews:'لا أخبار حديثة',loading:'جارٍ التحميل…',err:'فشل التحميل',
+backtest:'اختبار الاستراتيجيات',run:'ابدأ الاختبار',ret:'العائد',win:'النجاح',trd:'الصفقات',dd:'أقصى هبوط',oos:'آخر 30%',bh:'شراء واحتفاظ',tgSend:'إرسال إلى تلغرام',sent:'تم الإرسال ✓',failed:'فشل ✗',
+s_rsi:'ارتداد RSI',s_macd:'تقاطع MACD',s_sma:'تقاطع SMA 20/50',s_bb:'ارتداد بولينجر',s_trend:'RSI مع الترند',back:'→ رجوع',ind:'المؤشرات',
+rsiLow:'RSI تشبع بيعي',rsiHigh:'RSI تشبع شرائي',macdUp:'MACD فوق الإشارة',macdDn:'MACD تحت الإشارة',aboveSma:'السعر فوق SMA50',belowSma:'السعر تحت SMA50',stochUp:'ستوكاستيك صاعد',stochDn:'ستوكاستيك هابط',bbLow:'تحت بولينجر السفلي',bbHigh:'فوق بولينجر العلوي',
+lang:'اللغة',tf:'الإطار الزمني',tgT:'توكن بوت تلغرام',tgC:'معرّف محادثة تلغرام',ak:'مفتاح Anthropic (اختياري لتحليل الأخبار بالذكاء الاصطناعي)',auto:'فحص تلقائي للمفضلة أثناء فتح التطبيق',off:'إيقاف',min:'دقيقة',tgTest:'تجربة تلغرام',saved:'تم الحفظ',
+pos:'حجم الصفقة واللوت',bal:'الرصيد ($)',rp:'نسبة المخاطرة %',rr:'الربح : المخاطرة',slp:'وقف الخسارة (نقاط)',pv:'قيمة النقطة للوت ($)',calc:'احسب',risk:'المبلغ المخاطَر',lots:'اللوت',mini:'ميني لوت (0.1)',micro:'ميكرو لوت (0.01)',units:'الوحدات',tpp:'الهدف (نقاط)',prof:'الربح المتوقع',
+bin:'خيارات ثنائية',stake:'مبلغ الصفقة ($)',pay:'العائد %',wr:'نسبة نجاحك %',nt:'عدد الصفقات',be:'نسبة التعادل',ev:'المتوقع لكل صفقة',evn:'المتوقع لعدد الصفقات',ruin:'خسائر متتالية تنهي الرصيد',
+disc:'أداة تعليمية وليست نصيحة مالية، والأداء السابق لا يضمن المستقبل. الفحص التلقائي يعمل فقط والتطبيق مفتوح، وللتنبيهات على مدار الساعة استخدم بوت السيرفر. أسعار OTC غير متاحة.'}};
+const t=k=>(T[S.lang][k]||T.en[k]||k);
+const RANGE={'15m':'30d','1h':'6mo','1d':'5y'},CATS=['all','fav','fx','com','cry','idx'];
+const nm=a=>S.lang==='ar'?a.a:a.n,fmt=x=>x==null||!isFinite(x)?'—':Math.abs(x)>=100?x.toFixed(2):x.toPrecision(5);
+const cls=x=>x>0?'g':x<0?'r':'';
+async function getData(sym,tf){const u=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${tf}&range=${RANGE[tf]}`;
+ const r=await fetch(u,{headers:{'User-Agent':'Mozilla/5.0'}});if(!r.ok)throw new Error('HTTP '+r.status);return parseY(await r.json())}
+async function getNews(a){const L=S.lang==='ar'?'hl=ar&gl=SA&ceid=SA:ar':'hl=en-US&gl=US&ceid=US:en';
+ const x=await(await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(a.q+' when:2d')}&${L}`)).text();
+ return[...new DOMParser().parseFromString(x,'text/xml').querySelectorAll('item')].slice(0,8).map(i=>i.querySelector('title').textContent)}
+async function sentiment(a,titles){
+ if(S.cfg.ak&&titles.length)try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':S.cfg.ak,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+  body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:400,messages:[{role:'user',content:`Headlines about ${a.n}:\n${titles.join('\n')}\nReply JSON only: {"score": number -1..1, "summary": "two-sentence ${S.lang==='ar'?'Arabic':'English'} summary of the likely market impact"}`}]})});
+  const j=JSON.parse((await r.json()).content[0].text.replace(/```json|```/g,'').trim());return{s:+j.score,sum:j.summary}}catch(e){}
+ return{s:kwSent(titles),sum:''}}
+async function tg(text){const{tg:k,chat:c}=S.cfg;if(!k||!c)return false;try{const r=await fetch(`https://api.telegram.org/bot${k}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:c,text})});return r.ok}catch(e){return false}}
+function sigText(a,A,tf,ns,sum){return`${A.dir==='BUY'?'🟢 '+t('buy'):'🔴 '+t('sell')} ${nm(a)} (${tf})\n${t('price')}: ${fmt(A.px)}\n${t('strength')}: ${A.score>0?'+':''}${A.score}\n`+A.v.map(x=>'• '+t(x[1])).join('\n')+`\n${t('sl')}: ${fmt(A.sl)} | ${t('tp')}: ${fmt(A.tp)}\n\n📰 ${t('news')} (${ns>0?'+':''}${ns.toFixed(1)}) ${sum}`}
+// ---------- UI ----------
+function render(){document.documentElement.lang=S.lang;document.documentElement.dir=S.lang==='ar'?'rtl':'ltr';
+ $('#nav').innerHTML=[['market','📈'],['tools','🧮'],['settings','⚙️']].map(([k,i])=>`<button data-a=tab data-v=${k} class="${S.tab===k&&!S.cur?'on':''}"><span>${i}</span>${t(k)}</button>`).join('');
+ $('#h').textContent=t('title');$('#lb').textContent=S.lang==='ar'?'EN':'ع';
+ $('#view').innerHTML=S.cur?viewDetail():S.tab==='market'?viewMarket():S.tab==='tools'?viewTools():viewSettings();
+ if(!S.cur&&S.tab==='market')renderList()}
+function viewMarket(){return`<input id=q class=in placeholder="${t('search')}" value="${esc(S.q)}"><div class=chips>${CATS.map(c=>`<button class="chip ${S.cat===c?'on':''}" data-a=cat data-v=${c}>${t(c)}</button>`).join('')}</div>
+<div class=row><select id=tf>${['15m','1h','1d'].map(x=>`<option ${S.tf===x?'selected':''}>${x}</option>`).join('')}</select><button class=btn data-a=scan>${t('scanAll')}</button></div><div id=prog class=note></div><div id=list></div>`}
+function renderList(){const el=$('#list');if(!el)return;const q=S.q.toLowerCase();
+ let L=ASSETS.filter(a=>(S.cat==='all'||(S.cat==='fav'?S.favs.includes(a.s):a.c===S.cat))&&(a.n.toLowerCase().includes(q)||a.a.includes(q)||a.s.toLowerCase().includes(q)));
+ if(Object.keys(S.scan).length)L.sort((a,b)=>Math.abs((S.scan[b.s]||{score:0}).score)-Math.abs((S.scan[a.s]||{score:0}).score));
+ el.innerHTML=L.map(a=>{const r=S.scan[a.s],sc=r?r.score:null;
+  return`<div class=item data-a=open data-v="${a.s}"><div><b>${S.favs.includes(a.s)?'★ ':''}${esc(nm(a))}</b><small>${a.s}</small></div><div class=rt><b>${r?fmt(r.price):'—'}</b>${r?`<small class="${cls(r.chg)}">${r.chg>0?'+':''}${r.chg.toFixed(2)}%</small>`:''}</div>${sc===null?'':`<span class="badge ${sc>=3?'gb':sc<=-3?'rb':''}">${sc>0?'+':''}${sc}</span>`}</div>`}).join('')}
+async function scanAll(){const el=$('#list');let L=[...el.querySelectorAll('.item')].map(x=>ASSETS.find(a=>a.s===x.dataset.v));let done=0;const pr=$('#prog');
+ const work=async()=>{while(L.length){const a=L.shift();try{const D=await getData(a.s,S.tf),A=analyze(D,S.tf);S.scan[a.s]={score:A.score,price:D.price,chg:D.prev?(D.price/D.prev-1)*100:0}}catch(e){}
+  done++;if(pr)pr.textContent=`${t('scanning')} ${done}`}};
+ await Promise.all([work(),work(),work(),work(),work()]);if(pr)pr.textContent='';renderList()}
+async function openAsset(sym){const a=ASSETS.find(x=>x.s===sym);S.cur={a,load:1};render();
+ try{const D=await getData(sym,S.tf),A=analyze(D,S.tf);S.cur={a,D,A};render();
+  const ti=await getNews(a).catch(()=>[]);const sn=await sentiment(a,ti);if(S.cur&&S.cur.a===a){S.cur.news=ti;S.cur.sn=sn;render()}}
+ catch(e){if(S.cur)S.cur.err=e.message;render()}}
+function viewDetail(){const c=S.cur,a=c.a;let h=`<div class=row><button class=chip data-a=back>${t('back')}</button><button class=chip data-a=star>${S.favs.includes(a.s)?'★':'☆'}</button></div><h2>${esc(nm(a))} <small>${a.s}</small></h2>`;
+ if(c.load)return h+`<p class=note>${t('loading')}</p>`;if(c.err)return h+`<p class=r>${t('err')}: ${esc(c.err)}</p>`;
+ const A=c.A,I=A.I,i=A.i,sg=A.dir==='BUY'?['buy','g']:A.dir==='SELL'?['sell','r']:['neutral',''];
+ h+=`<div class=card><div class="sig ${sg[1]}">${t(sg[0])} (${A.score>0?'+':''}${A.score})</div><div class=res><div><span>${t('price')}</span><b>${fmt(c.D.price)}</b></div>${A.dir?`<div><span>${t('sl')}</span><b class=r>${fmt(A.sl)}</b></div><div><span>${t('tp')}</span><b class=g>${fmt(A.tp)}</b></div>`:''}</div>
+ <p class=note>${A.v.map(x=>'• '+t(x[1])).join('<br>')}</p>${A.dir?`<button class=btn data-a=send>${t('tgSend')}</button>`:''}</div>
+ <div class=card><b>${t('ind')} (${S.tf})</b><div class=res>${[['RSI',I.rsi[i].toFixed(1)],['MACD',fmt(I.macd[i])+' / '+fmt(I.sig[i])],['SMA20 / 50',fmt(I.s20[i])+' / '+fmt(I.s50[i])],['Bollinger',fmt(I.bl[i])+' – '+fmt(I.bu[i])],['Stoch %K/%D',I.k[i].toFixed(0)+' / '+I.d[i].toFixed(0)],['ATR',fmt(A.atr)]].map(r=>`<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}</div></div>
+ <div class=card><b>${t('news')}</b>${c.news?(c.news.length?`<p class=note>${c.news.map(x=>'• '+esc(x)).join('<br>')}</p><p><b class="${cls(c.sn.s)}">${c.sn.s>0?'+':''}${c.sn.s.toFixed(1)}</b> ${esc(c.sn.sum)}</p>`:`<p class=note>${t('noNews')}</p>`):`<p class=note>${t('loading')}</p>`}</div>
+ <div class=card><b>${t('backtest')}</b><button class=btn data-a=bt>${t('run')}</button>${c.bt?btTable(c.bt):''}</div>`;return h}
+function btTable(B){return`<table><tr><th></th><th>${t('ret')}</th><th>${t('win')}</th><th>${t('trd')}</th><th>${t('dd')}</th><th>${t('oos')}</th></tr>`+Object.keys(STR).map(k=>{const m=B[k];return`<tr><td>${t('s_'+k)}</td><td class="${cls(m.ret)}">${m.ret.toFixed(1)}%</td><td>${m.wr.toFixed(0)}%</td><td>${m.n}</td><td>${m.dd.toFixed(0)}%</td><td class="${cls(m.oos)}">${m.oos.toFixed(1)}%</td></tr>`}).join('')+`<tr><td>${t('bh')}</td><td class="${cls(B.bh)}">${B.bh.toFixed(1)}%</td><td colspan=4></td></tr></table>`}
+const inp=(id,l,v)=>`<label>${t(l)}</label><input id=${id} class=in type=number inputmode=decimal value=${v}>`,num=id=>parseFloat($('#'+id).value)||0,f2=(x,d=2)=>isFinite(x)?x.toFixed(d):'—';
+const rw=(a,b,c='')=>`<div><span>${a}</span><b class="${c}">${b}</b></div>`;
+function viewTools(){return`<div class=card><b>${t('pos')}</b>${inp('bal','bal',1000)}<div class=row><div>${inp('rp','rp',1)}</div><div>${inp('rr','rr',2)}</div></div><div class=row><div>${inp('sl','slp',20)}</div><div>${inp('pv','pv',10)}</div></div><button class=btn data-a=c1>${t('calc')}</button><div class=res id=o1></div></div>
+<div class=card><b>${t('bin')}</b>${inp('b2','bal',1000)}<div class=row><div>${inp('st','stake',10)}</div><div>${inp('po','pay',85)}</div></div><div class=row><div>${inp('wr','wr',55)}</div><div>${inp('nt','nt',100)}</div></div><button class=btn data-a=c2>${t('calc')}</button><div class=res id=o2></div></div>`}
+function c1(){const r=num('bal')*num('rp')/100,sl=num('sl'),pv=num('pv'),rr=num('rr');if(!sl||!pv)return;const l=r/(sl*pv);
+ $('#o1').innerHTML=rw(t('risk'),f2(r)+' $','r')+rw(t('lots'),f2(l,3))+rw(t('mini'),f2(l*10))+rw(t('micro'),f2(l*100,1))+rw(t('units'),Math.round(l*1e5).toLocaleString())+rw(t('tpp'),f2(sl*rr,1))+rw(t('prof'),f2(r*rr)+' $','g')}
+function c2(){const b=num('b2'),s=num('st'),p=num('po')/100,w=num('wr')/100,n=num('nt'),ev=w*s*p-(1-w)*s;
+ $('#o2').innerHTML=rw(t('be'),f2(100/(1+p),1)+' %')+rw(t('ev'),f2(ev)+' $',ev>=0?'g':'r')+rw(t('evn'),f2(ev*n)+' $',ev>=0?'g':'r')+rw(t('ruin'),s?Math.floor(b/s):'—')}
+function viewSettings(){const c=S.cfg;return`<div class=card><label>${t('lang')}</label><select id=sl2><option value=en ${S.lang==='en'?'selected':''}>English</option><option value=ar ${S.lang==='ar'?'selected':''}>العربية</option></select>
+<label>${t('tgT')}</label><input id=ctg class=in value="${esc(c.tg)}"><label>${t('tgC')}</label><input id=cch class=in value="${esc(c.chat)}"><label>${t('ak')}</label><input id=cak class=in type=password value="${esc(c.ak)}">
+<label>${t('auto')}</label><select id=cau>${[0,5,15,30].map(m=>`<option value=${m} ${+c.auto===m?'selected':''}>${m?m+' '+t('min'):t('off')}</option>`).join('')}</select>
+<button class=btn data-a=ssave>${t('saved').replace(/.*/,S.lang==='ar'?'حفظ':'Save')}</button><button class=btn data-a=stest>${t('tgTest')}</button><p id=sm class=note></p></div><p class=note>${t('disc')}</p>`}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,v=b.dataset.v;
+ if(a==='tab'){S.tab=v;S.cur=null;render()}else if(a==='cat'){S.cat=v;render()}else if(a==='open')openAsset(v);
+ else if(a==='back'){S.cur=null;render()}else if(a==='star'){const s=S.cur.a.s;S.favs=S.favs.includes(s)?S.favs.filter(x=>x!==s):[...S.favs,s];save();render()}
+ else if(a==='scan')scanAll();else if(a==='bt'){b.disabled=true;setTimeout(()=>{S.cur.bt=backtest(S.cur.D);render()},30)}
+ else if(a==='send'){const c=S.cur;const ok=await tg(sigText(c.a,c.A,S.tf,c.sn?c.sn.s:0,c.sn?c.sn.sum:''));b.textContent=ok?t('sent'):t('failed')}
+ else if(a==='c1')c1();else if(a==='c2')c2();
+ else if(a==='ssave'||a==='stest'){S.cfg={tg:$('#ctg').value.trim(),chat:$('#cch').value.trim(),ak:$('#cak').value.trim(),auto:+$('#cau').value};save();setAuto();
+  if(a==='stest')$('#sm').textContent=(await tg('✅ Trader Tools'))?t('sent'):t('failed');else $('#sm').textContent=t('saved')}});
+document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;renderList()}});
+document.addEventListener('change',e=>{if(e.target.id==='tf'){S.tf=e.target.value;S.scan={};save();renderList()}else if(e.target.id==='sl2'){S.lang=e.target.value;save();render()}});
+$('#lb').onclick=()=>{S.lang=S.lang==='ar'?'en':'ar';save();render()};
+let timer=null;function setAuto(){clearInterval(timer);if(+S.cfg.auto>0)timer=setInterval(autoScan,S.cfg.auto*60000)}
+async function autoScan(){for(const s of S.favs){const a=ASSETS.find(x=>x.s===s);if(!a)continue;try{const D=await getData(s,S.tf),A=analyze(D,S.tf);
+ if(A.dir&&S.last[s]!==A.dir){const ti=await getNews(a).catch(()=>[]),sn=await sentiment(a,ti);await tg(sigText(a,A,S.tf,sn.s,sn.sum))}S.last[s]=A.dir;save()}catch(e){}}}
+setAuto();render();
+</script></body></html>
