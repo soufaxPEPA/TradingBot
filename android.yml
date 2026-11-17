@@ -1,0 +1,37 @@
+name: build-apk
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Create Android project
+        run: |
+          npm init -y
+          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          echo '{"appId":"com.tradertools.app","appName":"Trader Tools","webDir":"www","server":{"androidScheme":"https"},"plugins":{"CapacitorHttp":{"enabled":true}}}' > capacitor.config.json
+          npx cap add android
+          npx cap sync android
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../TraderTools.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: Trader Tools APK ${{ github.run_number }}
+          files: TraderTools.apk
